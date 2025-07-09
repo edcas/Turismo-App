@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rutas Mágicas Puebla con IA y Mapas</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;900&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <!-- Leaflet CSS para los mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .fade-in { animation: fadeIn 0.8s ease-in-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Paleta de colores del Gobierno de Puebla */
+        .gob-maroon-text { color: #6a0f3c; }
+        .gob-maroon-bg { background-color: #6a0f3c; }
+        .gob-maroon-border { border-color: #6a0f3c; }
+        .gob-gold-text { color: #c5a560; }
+        
+        /* Estilos para el Modal */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center;
+            z-index: 1000; opacity: 0; visibility: hidden; transition: opacity 0.3s, visibility 0.3s;
+        }
+        .modal-overlay.visible { opacity: 1; visibility: visible; }
+        .modal-content {
+            background: white; padding: 2rem; border-radius: 1rem; max-width: 500px;
+            width: 90%; text-align: center; transform: scale(0.9); transition: transform 0.3s;
+        }
+        .modal-overlay.visible .modal-content { transform: scale(1); }
+        .gemini-spinner {
+            border: 2px solid #f3f3f3; border-top: 2px solid #6a0f3c; border-radius: 50%;
+            width: 16px; height: 16px; animation: spin 1s linear infinite; display: inline-block;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
+        /* Estilos para el mapa */
+        #map-container {
+            height: 400px; 
+            border-radius: 1rem; 
+            border: 1px solid #e2e8f0;
+            margin-bottom: 2rem;
+        }
+
+        /* Estilos para los nuevos inputs del cuestionario */
+        .form-input {
+            width: 100%; padding: 0.75rem; border: 1px solid #cbd5e1; border-radius: 0.5rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+        .form-input:focus {
+            outline: none; border-color: #6a0f3c; box-shadow: 0 0 0 2px rgba(106, 15, 60, 0.2);
+        }
+        .interest-checkbox { display: none; }
+        .interest-label {
+            display: inline-block; padding: 0.5rem 1rem; border-radius: 9999px;
+            background-color: #f1f5f9; color: #475569;
+            cursor: pointer; transition: all 0.2s; border: 1px solid #e2e8f0;
+        }
+        .interest-checkbox:checked + .interest-label {
+            background-color: #6a0f3c; color: white; border-color: #6a0f3c;
+            transform: scale(1.05);
+        }
+        
+        /* Estilos para el acordeón del itinerario */
+        details > summary {
+            list-style: none; padding: 1rem; background-color: #f8fafc; border-radius: 0.5rem;
+            cursor: pointer; font-weight: 600; border: 1px solid #e2e8f0;
+            transition: background-color 0.2s;
+        }
+        details > summary::-webkit-details-marker { display: none; }
+        details > summary:hover { background-color: #f1f5f9; }
+        details[open] > summary { background-color: #6a0f3c; color: white; }
+        .accordion-content {
+            padding: 1rem; border: 1px solid #e2e8f0; border-top: none;
+            border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem;
+        }
+
+        /* Estilos para el banner de publicidad */
+        .ad-banner {
+            margin-top: 2rem; padding: 1rem; background-color: #fdf8eb;
+            border: 1px solid #f9eec9; border-radius: 0.75rem; text-align: center;
+        }
+        .ad-banner p { color: #7a5c1c; }
+        .ad-banner a { color: #6a0f3c; font-weight: 600; text-decoration: underline; }
+
+        .heading-font { font-family: 'Montserrat', sans-serif; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app" class="max-w-4xl mx-auto p-4 md:p-8">
+
+        <!-- ===== SECCIÓN DE BIENVENIDA ===== -->
+        <section id="welcome-screen" class="text-center fade-in">
+            <div class="bg-white p-8 rounded-2xl shadow-lg border border-slate-200">
+                <header class="text-left mb-8">
+                    <h1 class="text-2xl font-bold gob-maroon-text heading-font">PUEBLA</h1>
+                    <p class="text-sm text-slate-500">Gobierno del Estado 2024 - 2030</p>
+                </header>
+                <div class="flex justify-center mb-4">
+                     <svg class="w-16 h-16 gob-maroon-text" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 15.75l-2.489-2.489m0 0a3.375 3.375 0 10-4.773-4.773 3.375 3.375 0 004.774 4.774zM21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                </div>
+                <h2 class="text-4xl md:text-5xl font-bold gob-maroon-text heading-font">Rutas Mágicas Puebla</h2>
+                <p class="mt-4 text-lg text-slate-600">Descubre la esencia de Puebla con un itinerario <span class="gob-gold-text font-bold">creado por IA</span> para ti.</p>
+                <p class="mt-2 text-md text-slate-500 max-w-2xl mx-auto">Responde unas preguntas y nuestra IA diseñará y visualizará en un mapa una aventura sostenible y memorable.</p>
+                <button id="start-btn" class="mt-8 w-full md:w-auto gob-maroon-bg text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-opacity-90 transform hover:scale-105 transition-transform duration-300 shadow-xl">
+                    Crear mi Ruta
+                </button>
+            </div>
+        </section>
+
+        <!-- ===== SECCIÓN DEL CUESTIONARIO ===== -->
+        <section id="questionnaire-screen" class="hidden">
+            <div class="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200">
+                <div id="question-container" class="space-y-8"></div>
+                <div class="mt-8 flex justify-end">
+                    <button id="next-btn" class="gob-maroon-bg text-white font-bold py-2 px-6 rounded-full hover:bg-opacity-90 transition-transform duration-300">
+                        Siguiente
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== SECCIÓN DE CARGA ===== -->
+        <section id="loading-screen" class="hidden text-center">
+             <div class="bg-white p-8 rounded-2xl shadow-lg border border-slate-200 flex flex-col items-center justify-center min-h-[400px]">
+                <svg class="animate-spin h-12 w-12 gob-maroon-text mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                <h2 class="text-2xl font-bold gob-maroon-text heading-font">Nuestra IA está diseñando tu aventura...</h2>
+                <p class="mt-2 text-slate-600">Creando y mapeando una experiencia única para ti.</p>
+            </div>
+        </section>
+
+        <!-- ===== SECCIÓN DE RESULTADOS (ITINERARIO) ===== -->
+        <section id="results-screen" class="hidden">
+             <div id="itinerary-container" class="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200">
+                <div id="itinerary-header"></div>
+                <div id="map-container"></div>
+                <div id="list-view-content" class="space-y-4"></div>
+                <div id="ad-banner-container"></div>
+            </div>
+            <div class="text-center mt-8">
+                <button id="restart-btn" class="gob-maroon-bg text-white font-bold py-3 px-8 rounded-full text-lg hover:bg-opacity-90 transform hover:scale-105 transition-transform duration-300 shadow-xl">
+                    Crear una Nueva Ruta
+                </button>
+            </div>
+        </section>
+
+        <footer class="text-center mt-12 py-8 border-t border-slate-200">
+          <p class="text-xl font-bold gob-maroon-text heading-font">POR AMOR A <span class="font-black">PUEBLA</span></p>
+      </footer>
+    </div>
+    
+    <!-- Modal para Datos Curiosos -->
+    <div id="fun-fact-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 class="text-2xl font-bold gob-maroon-text heading-font mb-4">✨ Dato Curioso ✨</h3>
+            <p id="fun-fact-text" class="text-slate-600"></p>
+            <button id="close-modal-btn" class="mt-6 bg-slate-200 text-slate-800 font-bold py-2 px-6 rounded-full hover:bg-slate-300">
+                Entendido
+            </button>
+        </div>
+    </div>
+
+    <!-- Leaflet JS para los mapas -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+    <script>
+        // ===== ELEMENTOS DEL DOM =====
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const questionnaireScreen = document.getElementById('questionnaire-screen');
+        const loadingScreen = document.getElementById('loading-screen');
+        const resultsScreen = document.getElementById('results-screen');
+        const startBtn = document.getElementById('start-btn');
+        const restartBtn = document.getElementById('restart-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const questionContainer = document.getElementById('question-container');
+        const itineraryHeader = document.getElementById('itinerary-header');
+        const listViewContent = document.getElementById('list-view-content');
+        const adBannerContainer = document.getElementById('ad-banner-container');
+        const funFactModal = document.getElementById('fun-fact-modal');
+        const funFactText = document.getElementById('fun-fact-text');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+
+        // ===== DATOS (con coordenadas y nuevos intereses) =====
+        const puntosDeInteres = [
+            { id: 1, nombre: "Cascada Las Brisas", pueblo: "Cuetzalan", interes: ["aventura", "atracciones_naturales"], pet_friendly: true, imagen: "https://placehold.co/600x400/34d399/ffffff?text=Cascada", lat: 20.028, lng: -97.515 },
+            { id: 2, nombre: "Cooperativa de Café 'Tosepan Kali'", pueblo: "Cuetzalan", interes: ["cocina_regional", "joyas_ocultas", "visitas_experiencias"], pet_friendly: false, imagen: "https://placehold.co/600x400/a16207/ffffff?text=Café", lat: 20.021, lng: -97.510 },
+            { id: 3, nombre: "Cena en 'Peña Los Jarritos'", pueblo: "Cuetzalan", interes: ["buena_comida", "arte_teatro"], pet_friendly: false, imagen: "https://placehold.co/600x400/ef4444/ffffff?text=Cena", lat: 20.023, lng: -97.512 },
+            { id: 4, nombre: "Taller de Telar de Cintura", pueblo: "Cuetzalan", interes: ["artesania", "museos_culturales", "joyas_ocultas"], pet_friendly: true, imagen: "https://placehold.co/600x400/8b5cf6/ffffff?text=Artesanía", lat: 20.025, lng: -97.508 },
+            { id: 5, nombre: "Zona Arqueológica de Yohualichan", pueblo: "Cuetzalan", interes: ["atracciones_imprescindibles", "arquitectura_historica"], pet_friendly: true, imagen: "https://placehold.co/600x400/78716c/ffffff?text=Ruinas", lat: 20.051, lng: -97.498 },
+            { id: 6, nombre: "Mirador de Cristal y Vitromural", pueblo: "Zacatlán", interes: ["atracciones_imprescindibles", "arte_teatro"], pet_friendly: true, imagen: "https://placehold.co/600x400/3b82f6/ffffff?text=Mirador", lat: 19.934, lng: -97.964 },
+            { id: 7, nombre: "Valle de las Piedras Encimadas", pueblo: "Zacatlán", interes: ["atracciones_naturales", "aventura"], pet_friendly: true, imagen: "https://placehold.co/600x400/16a34a/ffffff?text=Valle", lat: 19.858, lng: -97.985 },
+            { id: 8, nombre: "Fábrica de Sidra 'El Llagar'", pueblo: "Zacatlán", interes: ["cocina_regional", "visitas_experiencias"], pet_friendly: false, imagen: "https://placehold.co/600x400/f97316/ffffff?text=Sidra", lat: 19.932, lng: -97.968 },
+            { id: 9, nombre: "Desayuno en 'El Sabor de la Sierra'", pueblo: "Zacatlán", interes: ["buena_comida", "cocina_regional"], pet_friendly: false, imagen: "https://placehold.co/600x400/facc15/ffffff?text=Desayuno", lat: 19.935, lng: -97.966 },
+            { id: 10, nombre: "Presa de la Soledad", pueblo: "Tlatlauquitepec", interes: ["aventura", "atracciones_naturales"], pet_friendly: true, imagen: "https://placehold.co/600x400/22d3ee/ffffff?text=Presa", lat: 19.789, lng: -97.465 },
+            { id: 11, nombre: "Senderismo en el Cerro Cabezón", pueblo: "Tlatlauquitepec", interes: ["aventura_deportes", "atracciones_naturales"], pet_friendly: true, imagen: "https://placehold.co/600x400/4ade80/ffffff?text=Senderismo", lat: 19.845, lng: -97.492 },
+            { id: 12, nombre: "Santuario del Señor de Huaxtla", pueblo: "Tlatlauquitepec", interes: ["monumentos_religiosos", "arquitectura_historica"], pet_friendly: false, imagen: "https://placehold.co/600x400/a78bfa/ffffff?text=Santuario", lat: 19.840, lng: -97.490 },
+            { id: 13, nombre: "Comida en 'El Rincón Tlatlauqui'", pueblo: "Tlatlauquitepec", interes: ["buena_comida", "cocina_regional", "joyas_ocultas"], pet_friendly: false, imagen: "https://placehold.co/600x400/fb923c/ffffff?text=Comida", lat: 19.842, lng: -97.495 },
+            { id: 14, nombre: "Gran Pirámide de Cholula", pueblo: "Cholula", interes: ["atracciones_imprescindibles", "arquitectura_historica", "museos_culturales"], pet_friendly: false, imagen: "https://placehold.co/600x400/94a3b8/ffffff?text=Pirámide", lat: 19.057, lng: -98.301 },
+            { id: 15, nombre: "Taller de Talavera 'La Reyna'", pueblo: "Cholula", interes: ["artesania", "visitas_experiencias"], pet_friendly: true, imagen: "https://placehold.co/600x400/60a5fa/ffffff?text=Talavera", lat: 19.063, lng: -98.308 },
+            { id: 16, nombre: "Cena en 'Container City'", pueblo: "Cholula", interes: ["buena_comida", "arte_teatro"], pet_friendly: true, imagen: "https://placehold.co/600x400/f87171/ffffff?text=Cena", lat: 19.059, lng: -98.315 },
+        ];
+        const pueblosMagicos = { 
+            "Cuetzalan": { lat: 20.02, lng: -97.51 }, 
+            "Zacatlán": { lat: 19.93, lng: -97.96 }, 
+            "Cholula": { lat: 19.06, lng: -98.30 }, 
+            "Tlatlauquitepec": { lat: 19.84, lng: -97.49 } 
+        };
+        
+        // --- Nuevo Cuestionario ---
+        const questions = [
+            {
+                key: 'lugar',
+                text: '¿A qué Pueblo Mágico te gustaría ir?',
+                type: 'text_autocomplete',
+                options: Object.keys(pueblosMagicos)
+            },
+            {
+                key: 'fechas',
+                text: '¿Cuándo planeas tu viaje?',
+                type: 'date_range'
+            },
+            {
+                key: 'tipoViaje',
+                text: '¿Cómo viajas?',
+                type: 'radio',
+                options: [
+                    { value: 'solo', text: '👤 Solo' }, { value: 'pareja', text: '❤️ En Pareja' },
+                    { value: 'amigos', text: '🎉 Con Amigos' }, { value: 'familia', text: '👨‍👩‍👧‍👦 En Familia' },
+                    { value: 'mascotas', text: '🐾 Con Mascotas' }
+                ]
+            },
+            {
+                key: 'intereses',
+                text: '¿Qué te interesa hacer?',
+                type: 'checkbox',
+                options: [
+                    { value: 'atracciones_imprescindibles', text: 'Atracciones imprescindibles' },
+                    { value: 'buena_comida', text: 'Buena comida' },
+                    { value: 'joyas_ocultas', text: 'Joyas ocultas' },
+                    { value: 'visitas_experiencias', text: 'Visitas y experiencias' },
+                    { value: 'arquitectura_historica', text: 'Arquitectura histórica' },
+                    { value: 'cocina_regional', text: 'Cocina regional' },
+                    { value: 'artesania', text: 'Artesanía' },
+                    { value: 'atracciones_naturales', text: 'Atracciones naturales' },
+                    { value: 'museos_culturales', text: 'Museos culturales' },
+                    { value: 'monumentos_religiosos', text: 'Monumentos religiosos' },
+                    { value: 'aventura_deportes', text: 'Aventura y deportes' },
+                    { value: 'arte_teatro', text: 'Arte y Teatro' }
+                ]
+            }
+        ];
+
+        // ===== ESTADO DE LA APLICACIÓN =====
+        let currentQuestionIndex = 0;
+        let userAnswers = {};
+        let map = null;
+
+        // ===== LÓGICA DE LA APLICACIÓN =====
+        startBtn.addEventListener('click', startQuestionnaire);
+        restartBtn.addEventListener('click', resetApp);
+        nextBtn.addEventListener('click', handleNextQuestion);
+        closeModalBtn.addEventListener('click', () => funFactModal.classList.remove('visible'));
+        funFactModal.addEventListener('click', (e) => { if (e.target === funFactModal) funFactModal.classList.remove('visible'); });
+        
+        function startQuestionnaire() {
+            welcomeScreen.classList.add('hidden');
+            questionnaireScreen.classList.remove('hidden');
+            questionnaireScreen.classList.add('fade-in');
+            displayQuestion();
+        }
+
+        function displayQuestion() {
+            const question = questions[currentQuestionIndex];
+            let html = `<div class="fade-in"><h2 class="text-2xl font-bold mb-4 gob-maroon-text heading-font">${question.text}</h2>`;
+
+            switch (question.type) {
+                case 'text_autocomplete':
+                    html += `<input type="text" id="lugar-input" list="pueblos-list" class="form-input" placeholder="Escribe y selecciona...">`;
+                    html += `<datalist id="pueblos-list">`;
+                    question.options.forEach(opt => { html += `<option value="${opt}">`; });
+                    html += `</datalist>`;
+                    break;
+                case 'date_range':
+                    html += `<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div><label for="start-date" class="block text-sm font-medium text-slate-700 mb-1">Fecha de inicio</label><input type="date" id="start-date" class="form-input"></div>
+                                <div><label for="end-date" class="block text-sm font-medium text-slate-700 mb-1">Fecha de fin</label><input type="date" id="end-date" class="form-input"></div>
+                             </div>`;
+                    break;
+                case 'radio':
+                    html += `<div class="grid grid-cols-2 md:grid-cols-3 gap-4">`;
+                    question.options.forEach(opt => {
+                        html += `<div><input type="radio" name="tipoViaje" id="${opt.value}" value="${opt.value}" class="interest-checkbox"><label for="${opt.value}" class="interest-label w-full text-center">${opt.text}</label></div>`;
+                    });
+                    html += `</div>`;
+                    break;
+                case 'checkbox':
+                    html 
