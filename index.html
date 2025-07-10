@@ -178,7 +178,12 @@
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
     <script>
+    // Se envuelve todo el código en este oyente de eventos.
+    // Esto asegura que el JavaScript no se ejecute hasta que el HTML esté completamente cargado.
     document.addEventListener('DOMContentLoaded', function() {
+        
+        console.log("El script de la aplicación se ha iniciado correctamente.");
+
         // ===== ELEMENTOS DEL DOM =====
         const welcomeScreen = document.getElementById('welcome-screen');
         const questionnaireScreen = document.getElementById('questionnaire-screen');
