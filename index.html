@@ -308,4 +308,280 @@
                     html += `</div>`;
                     break;
                 case 'checkbox':
-                    html 
+                    html += `<div class="flex flex-wrap gap-3">`;
+                    question.options.forEach(opt => {
+                        html += `<div><input type="checkbox" name="intereses" id="${opt.value}" value="${opt.value}" class="interest-checkbox"><label for="${opt.value}" class="interest-label">${opt.text}</label></div>`;
+                    });
+                    html += `</div>`;
+                    break;
+            }
+            html += `</div>`;
+            questionContainer.innerHTML = html;
+        }
+
+        function handleNextQuestion() {
+            if (!saveCurrentAnswer()) {
+                alert("Por favor, completa la pregunta actual antes de continuar.");
+                return;
+            }
+
+            currentQuestionIndex++;
+            if (currentQuestionIndex < questions.length) {
+                displayQuestion();
+                if (currentQuestionIndex === questions.length - 1) {
+                    nextBtn.textContent = 'Generar Itinerario';
+                }
+            } else {
+                buildAndDisplayItinerary();
+            }
+        }
+        
+        function saveCurrentAnswer() {
+            const question = questions[currentQuestionIndex];
+            switch (question.key) {
+                case 'lugar':
+                    const lugarInput = document.getElementById('lugar-input');
+                    if (!lugarInput.value || !pueblosMagicos[lugarInput.value]) return false;
+                    userAnswers.lugar = lugarInput.value;
+                    break;
+                case 'fechas':
+                    const startDate = document.getElementById('start-date').value;
+                    const endDate = document.getElementById('end-date').value;
+                    if (!startDate || !endDate) return false;
+                    userAnswers.fechas = { start: startDate, end: endDate };
+                    break;
+                case 'tipoViaje':
+                    const tipoViaje = document.querySelector('input[name="tipoViaje"]:checked');
+                    if (!tipoViaje) return false;
+                    userAnswers.tipoViaje = tipoViaje.value;
+                    break;
+                case 'intereses':
+                    const intereses = Array.from(document.querySelectorAll('input[name="intereses"]:checked')).map(el => el.value);
+                    if (intereses.length === 0) return false;
+                    userAnswers.intereses = intereses;
+                    break;
+            }
+            return true;
+        }
+
+        async function buildAndDisplayItinerary() {
+            questionnaireScreen.classList.add('hidden');
+            loadingScreen.classList.remove('hidden');
+            loadingScreen.classList.add('fade-in');
+
+            const itinerarySkeleton = buildItinerarySkeleton(userAnswers);
+
+            try {
+                const creativeContent = await getCreativeItineraryText(userAnswers, itinerarySkeleton);
+                itinerarySkeleton.title = creativeContent.creativeTitle;
+                itinerarySkeleton.description = creativeContent.engagingDescription;
+            } catch (error) {
+                console.error("Error al llamar a Gemini:", error);
+                itinerarySkeleton.title = `Tu Ruta Mágica en ${itinerarySkeleton.pueblo}`;
+                itinerarySkeleton.description = `Hemos diseñado esta experiencia en ${itinerarySkeleton.pueblo} para ti.`;
+            }
+            
+            displayItinerary(itinerarySkeleton);
+        }
+
+        function buildItinerarySkeleton(answers) {
+            const targetPueblo = answers.lugar;
+            let filteredPdis = puntosDeInteres.filter(pdi => {
+                if (pdi.pueblo !== targetPueblo) return false;
+                if (answers.tipoViaje === 'mascotas' && !pdi.pet_friendly) return false;
+                return true;
+            });
+
+            filteredPdis.forEach(pdi => {
+                pdi.score = pdi.interes.reduce((acc, interest) => {
+                    return acc + (answers.intereses.includes(interest) ? 1 : 0);
+                }, 0);
+            });
+
+            const finalPdis = filteredPdis.filter(pdi => pdi.score > 0).sort((a, b) => b.score - a.score);
+
+            let day1 = [], day2 = [];
+            finalPdis.forEach((pdi, index) => {
+                if (index % 2 === 0 && day1.length < 3) {
+                    day1.push(pdi);
+                } else if (day2.length < 3) {
+                    day2.push(pdi);
+                }
+            });
+
+            return { pueblo: targetPueblo, days: [ { day: 'Día 1', activities: day1 }, { day: 'Día 2', activities: day2 } ] };
+        }
+
+        function displayItinerary(itinerary) {
+            itineraryHeader.innerHTML = `<h2 class="text-3xl md:text-4xl font-bold text-center gob-maroon-text heading-font">${itinerary.title}</h2><p class="text-center mt-2 mb-6 text-slate-600">${itinerary.description}</p>`;
+            
+            let daysHtml = itinerary.days.map(day => {
+                if(day.activities.length === 0) return '';
+                let activitiesHtml = day.activities.map(activity => `
+                    <div class="flex flex-col md:flex-row items-start bg-white rounded-lg overflow-hidden mb-4 shadow-sm border border-slate-100">
+                        <img src="${activity.imagen}" alt="${activity.nombre}" class="w-full md:w-1/3 h-48 md:h-auto object-cover">
+                        <div class="p-4 flex flex-col justify-between flex-grow">
+                            <div>
+                                <h4 class="font-bold text-lg text-slate-800">${activity.nombre}</h4>
+                                <p class="text-slate-600 text-sm mt-2">${getRecommendationText(activity)}</p>
+                            </div>
+                            <button class="fun-fact-btn mt-4 text-sm font-bold gob-maroon-text self-start flex items-center gap-2" data-activity="${activity.nombre}" data-pueblo="${activity.pueblo}">
+                                ✨ Dame un dato curioso <span class="spinner-placeholder"></span>
+                            </button>
+                        </div>
+                    </div>`).join('');
+                return `<details class="group" open><summary class="flex justify-between items-center"><span>${day.day}: Explorando ${itinerary.pueblo}</span><span class="transform transition-transform duration-200 group-open:rotate-180">▼</span></summary><div class="accordion-content">${activitiesHtml}</div></details>`;
+            }).join('');
+            listViewContent.innerHTML = daysHtml;
+
+            adBannerContainer.innerHTML = `
+                <div class="mt-8 rounded-2xl overflow-hidden shadow-lg border border-slate-200 bg-white group cursor-pointer transform hover:-translate-y-1 transition-transform duration-300">
+                    <a href="#" class="flex flex-col md:flex-row">
+                        <div class="md:w-1/3">
+                            <img class="h-48 w-full object-cover md:h-full" src="https://placehold.co/600x400/fdf8eb/6a0f3c?text=Manos+Mágicas" alt="Artesanía local de Puebla">
+                        </div>
+                        <div class="p-6 md:w-2/3 flex flex-col justify-center">
+                            <p class="text-sm font-semibold gob-maroon-text uppercase tracking-wider">Apoya a la comunidad</p>
+                            <h3 class="text-2xl font-bold heading-font text-slate-800 mt-1">Descubre el Corazón Artesanal de ${itinerary.pueblo}</h3>
+                            <p class="text-slate-600 mt-2">Tu visita puede hacer la diferencia. Conecta con los artesanos locales y llévate a casa una pieza única que cuenta una historia.</p>
+                            <div class="mt-4">
+                                <span class="inline-block gob-maroon-bg text-white font-bold py-2 px-5 rounded-full group-hover:bg-opacity-90 transition-colors">
+                                    Ver Artesanos →
+                                </span>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            `;
+            
+            setupMap(itinerary);
+
+            loadingScreen.classList.add('hidden');
+            resultsScreen.classList.remove('hidden');
+
+            document.querySelectorAll('.fun-fact-btn').forEach(btn => btn.addEventListener('click', handleFunFactClick));
+        }
+
+        function setupMap(itinerary) {
+            const puebloData = pueblosMagicos[itinerary.pueblo];
+            if (!puebloData) return;
+            if (!map) {
+                map = L.map('map-container');
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                }).addTo(map);
+            }
+            map.eachLayer(layer => {
+                if (layer instanceof L.Marker || layer instanceof L.Polyline) {
+                    map.removeLayer(layer);
+                }
+            });
+            const allActivities = itinerary.days.flatMap(day => day.activities);
+            if (allActivities.length === 0) {
+                map.setView([puebloData.lat, puebloData.lng], 13);
+                return;
+            }
+            const latLngs = [];
+            const dayColors = ['#6a0f3c', '#c5a560'];
+            itinerary.days.forEach((day, index) => {
+                const dayLatLngs = [];
+                day.activities.forEach(activity => {
+                    const latLng = [activity.lat, activity.lng];
+                    dayLatLngs.push(latLng);
+                    latLngs.push(latLng);
+                    const iconHtml = `<div class="w-6 h-6 rounded-full flex items-center justify-center text-white font-bold" style="background-color: ${dayColors[index % dayColors.length]}">${index + 1}</div>`;
+                    const customIcon = L.divIcon({ html: iconHtml, className: 'custom-map-icon', iconSize: [24, 24], iconAnchor: [12, 12] });
+                    L.marker(latLng, { icon: customIcon }).addTo(map).bindPopup(`<b>${activity.nombre}</b><br>${day.day}`);
+                });
+                if (dayLatLngs.length > 1) {
+                    L.polyline(dayLatLngs, { color: dayColors[index % dayColors.length], weight: 5, opacity: 0.7 }).addTo(map);
+                }
+            });
+            map.fitBounds(latLngs, { padding: [50, 50] });
+            setTimeout(() => map.invalidateSize(), 10);
+        }
+        
+        async function handleFunFactClick(event) {
+            const button = event.currentTarget;
+            const activityName = button.dataset.activity;
+            const puebloName = button.dataset.pueblo;
+            const spinnerPlaceholder = button.querySelector('.spinner-placeholder');
+            spinnerPlaceholder.innerHTML = '<div class="gemini-spinner"></div>';
+            button.disabled = true;
+            try {
+                const fact = await getFunFact(activityName, puebloName);
+                funFactText.textContent = fact;
+                funFactModal.classList.add('visible');
+            } catch (error) {
+                console.error("Error al obtener dato curioso:", error);
+                funFactText.textContent = "Hubo un problema al contactar a nuestro guía experto. Por favor, intenta de nuevo más tarde.";
+                funFactModal.classList.add('visible');
+            } finally {
+                spinnerPlaceholder.innerHTML = '';
+                button.disabled = false;
+            }
+        }
+        
+        async function callGeminiAPI(prompt) {
+            const PROXY_URL = "https://turismo-back.vercel.app/api/gemini";
+            const payload = { prompt };
+            
+            try {
+                const response = await fetch(PROXY_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    console.error("Error desde el servidor proxy:", errorData);
+                    throw new Error(`Error del servidor proxy: ${errorData.error || response.statusText}`);
+                }
+                
+                const data = await response.json();
+                return data.text;
+            } catch (error) {
+                // Añadimos un manejo de errores más específico para el fallo de fetch
+                console.error("Error de conexión (fetch):", error);
+                if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+                     throw new Error("No se pudo conectar con el servidor de IA. Esto puede ser un problema de CORS en el backend o de red. Por favor, verifica la configuración del servidor en Vercel.");
+                }
+                // Re-lanzamos otros errores para no ocultarlos
+                throw error;
+            }
+        }
+
+        async function getCreativeItineraryText(answers, itinerary) {
+            const activityNames = itinerary.days.flatMap(d => d.activities.map(a => a.nombre)).join(', ');
+            const prompt = `Eres un escritor de viajes para Puebla, México. Un usuario quiere un viaje a ${answers.lugar}. Viaja de esta forma: ${answers.tipoViaje}. Sus intereses son: ${answers.intereses.join(', ')}. Has creado un itinerario con estas actividades: ${activityNames}. Genera una respuesta JSON con "creativeTitle" (título corto y atractivo) y "engagingDescription" (descripción de 2-3 frases). Responde solo con el JSON.`;
+            const responseText = await callGeminiAPI(prompt);
+            const jsonString = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(jsonString);
+        }
+
+        async function getFunFact(activityName, puebloName) {
+            const prompt = `Dime un dato curioso o leyenda corta (máximo 40 palabras, en español) sobre "${activityName}" en ${puebloName}, Puebla. Responde solo con el dato.`;
+            return await callGeminiAPI(prompt);
+        }
+        
+        function getRecommendationText(activity) {
+            return `Una excelente opción para disfrutar de lo mejor que ${activity.pueblo} tiene para ofrecer, alineado con tus intereses.`;
+        }
+
+        function resetApp() {
+            resultsScreen.classList.add('hidden');
+            welcomeScreen.classList.remove('hidden');
+            welcomeScreen.classList.add('fade-in');
+            currentQuestionIndex = 0;
+            userAnswers = {};
+            questionContainer.innerHTML = '';
+            itineraryHeader.innerHTML = '';
+            listViewContent.innerHTML = '';
+            adBannerContainer.innerHTML = '';
+            nextBtn.textContent = 'Siguiente';
+            if (map) { map.remove(); map = null; }
+        }
+    </script>
+</body>
+</html>
